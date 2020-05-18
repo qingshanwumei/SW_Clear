@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Mar 11 20:56:39 2020
+
+@author: Administrator
+"""
+import os,re,time
+import pandas as pd
+import numpy as np
+
+################################--函数--#######################################
+def df_compare(mom,kid):
+    mom = mom.fillna("&&&")   # 填充NaN值,以便比对差异
+    kid = kid.fillna("&&&")
+    mom.reset_index(drop = True,inplace = True)   # 重新索引(丢弃旧索引,替换原表)
+    kid.reset_index(drop = True,inplace = True)
+    
+    if mom.设备名称.equals(kid.设备名称) == False:   # 设备名称如有差异,报错跳出
+        Summary.at[cityname,'设备出入'] = '有出入! 请核对!'
+        return print(cityname + " - 设备名称有出入")   # LOG #
+    
+    if mom.equals(kid) == False :   # 两表如有差异,遍历记录明细
+        temp=pd.DataFrame([])            #新建地市差异空表   
+        n = 0   # 差异数
+        for i in mom.index:
+            for c in mom.columns:
+                if mom.at[i,c] != kid.at[i,c]:
+                    n += 1
+                    temp.at[i,c] = str(mom.at[i,c]) + ">>>" + str(kid.at[i,c])
+                else:
+                    temp.at[i,c] = str(mom.at[i,c])
+
+        Summary.at[cityname,'明细差异'] = n   # 记录到Sum表
+        temp.to_excel(writer,cityname)    # 输出地市差异表
+        return print(cityname +' - 输出完毕')   # LOG #
+    else:
+        return print(cityname +' - 无差异')   # LOG #
+
+##########################--地市名称对应表--####################################
+citys = pd.DataFrame(np.array([['sz','深圳'],['jm','江门'],['dg','东莞'], \
+                              ['zh','珠海'],['st','汕头'],['fs','佛山'], \
+                              ['hz','惠州'],['zs','中山'],['zj','湛江'], \
+                              ['zq','肇庆'],['mm','茂名'],['jy','揭阳'], \
+                              ['sg','韶关'],['hy','河源'],['mz','梅州'], \
+                              ['sw','汕尾'],['yj','阳江'],['gz','广州'], \
+                              ['qy','清远'],['cz','潮州'],['yf','云浮']]))
+citys.columns=['short','地市']   # 命名列
+citys = citys.set_index('short')    # 设置缩写为索引
+ 
+##############################--主程序--#######################################
+if __name__=='__main__':
+    
+    start = time.time()
+    writer = pd.ExcelWriter('摘要.xls')   # 开启摘要工作薄
+    
+    Summary = pd.DataFrame(citys.地市)   # 新建摘要表,引用地市名称对应表
+    Summary.set_index('地市',drop = True,inplace =True)   # 重新索引(丢弃旧索引,原表上应用更改)
+    Summary['设备出入'] = ''   # 预设column，避免因无比对结果而不生成该列；填充''以接收字符串（NaN默认float型）。
+    Summary['明细差异'] = np.nan   # 预设column，避免因无比对结果而不生成该列；填充NaN值。
+    
+    Dad_df = pd.read_excel("附件一：SW退网进展（5月4-5月10）.xlsx",sheetname = '2 交换机明细')  #! 运行前记得更改文件名
+    
+    for filename in os.listdir('上报'): # 开始遍历全部文件名
+        shortname = re.findall(r'_([a-z]{2})_',filename)   # 正则表达式
+        cityname = citys['地市'].loc[shortname[-1]]   # 选取最后一个匹配项
+        print(cityname)   # LOG #
+        
+        # 读取地市第一张sheet退网进度; 
+        # 重新索引
+        # 获取columns的当前统计周期名称,命名给Sum表的退网台数列; 获取地市退网台数
+        kid_device_df = pd.read_excel( './上报/'+ filename,sheetname = '1 交换机汇总统计')
+        kid_device_df.set_index('地市',drop = True,inplace =True)
+        Summary.at[cityname,kid_device_df.columns[-1]] = kid_device_df.at[cityname,kid_device_df.columns[-1]]
+       
+        Mom_df = Dad_df.loc[Dad_df['地市名称'] == cityname]   # 获取当前cityname上期的明细表
+        kid_df = pd.read_excel( './上报/'+ filename,sheetname = '2 交换机明细')
+        kid_df = kid_df.loc[kid_df['地市名称'] == cityname]   # 获取当前cityname本期的明细表
+        
+        df_compare(Mom_df,kid_df)   # 调用比对函数
+     
+    #* sum()函数不允许字符串参加计算,包括空字符''          
+    summate = Summary[[Summary.columns[1],Summary.columns[2]]].sum()   
+    summate.name = "合计"   #* 如无 ignore_index=True,append()要求Series必须有name
+    Summary = Summary.append(summate)   # 增加合计行
+    
+    Summary['地市名']=Summary.index   # 增加辅助列
+    Summary.to_excel(writer,"摘要")   # 输出 摘要sheet
+    
+    writer.save()   #保存 摘要工作薄
+    writer.close()
+        
+    print('\nDone!')
+    
+    end = time.time()
+    print("耗时 "+ str(round((end-start),2)) +" 秒")
